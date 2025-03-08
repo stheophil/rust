@@ -9,35 +9,28 @@ struct DateTimeInterval {
 }
 
 #[derive(Debug)]
-struct Interval {
+struct  Interval {
     begin: i64,
     end: i64
 }
 
 #[derive(Debug)]
-pub enum Open {
-    fullyopen,
-    limited
-}
-
-#[derive(Debug)]
 struct OpeningTime {
     time: Interval,
-    open: Open
+    description: String
 }
 
 #[derive(Debug)]
-struct Opening {
-    intvl: DateTimeInterval,
+pub struct Opening {
+    caption: String,
+    dates: DateTimeInterval,
     times: [Vec<OpeningTime>; 7]
 }
 
 #[derive(Debug)]
 pub struct Pool {
     pub name: String,
-    pub url: String,
-
-    openings: Vec<Opening>
+    pub url: String
 }
 
 #[derive(Debug)]
@@ -76,7 +69,7 @@ impl BerlinerBaeder {
             .map(|x| (x.inner_html(), x.value().attr("href").unwrap()))
             .for_each(
                 |(name, url)| {
-                    vec.push(Pool{name: name.trim().to_string(), url: url.trim().to_string(), openings: Vec::new()});
+                    vec.push(Pool{name: name.trim().to_string(), url: url.trim().to_string()});
                 }
             );
 
@@ -92,12 +85,7 @@ impl Pool {
         self.name.to_lowercase().contains(&name.to_lowercase())
     }
 
-    pub fn scrape_times(&mut self) {
-        let openingtime_selector = scraper::Selector::parse("table.openingtime").unwrap();
-        let caption_selector = scraper::Selector::parse("caption").unwrap();
-        let tr_selector = scraper::Selector::parse("tbody > tr").unwrap();
-        let regex = Regex::new(r"(\d\d:\d\d)[\n\s]+-[\n\s]+(\d\d:\d\d)").unwrap();
-
+    pub fn scrape_times(&self) {
         let response = reqwest::blocking::get("https://www.berlinerbaeder.de".to_string() + &self.url)
             .unwrap()
             .text()
@@ -105,9 +93,38 @@ impl Pool {
 
         let document = scraper::Html::parse_document(&response);
 
+        // <table class="openingtime">
+        let openingtime_selector = scraper::Selector::parse("table.openingtime").unwrap();
+
+        // <caption><span class="d-none d-print-inline">Hallenbad</span> Öffnungszeiten 23.09.24 - 31.07.25
+        // </caption>
+        let caption_selector = scraper::Selector::parse("caption").unwrap();
+        let regex_caption = Regex::new(r"([^\d]+)\s*(\d\d.\d\d.\d\d)[\n\s]+-[\n\s]+(\d\d.\d\d.\d\d)").unwrap();
+
+        // <thead>
+        //     <tr>
+        //         <th scope="col" class="day">Tag</th>
+        //         <th scope="col" class="times">Uhrzeit</th>
+        //         <th scope="col" class="art">Art</th>
+        //     </tr>
+        // </thead>
+        // <tbody>
+        //     <tr class="even">
+        //         <th rowspan="2" scope="rowgroup" class="day">
+        //             Montag
+        //         </th>
+        //         <td title="öffentl. Schwimmen" class="time even time_0"><span class="mobileday">Montag</span>
+        //             06:30  -  08:00 <span class="timelabel">Uhr</span></td>
+        //         <td class="even time_0"><span class="mobileday"></span>öffentl. Schwimmen</td>
+        //     </tr>        
+        let tr_selector = scraper::Selector::parse("tbody > tr").unwrap();
+        let regex_times = Regex::new(r"(\d\d:\d\d)[\n\s]+-[\n\s]+(\d\d:\d\d)").unwrap();
+
+        let regex_open = Regex::new(r"öffentl").unwrap();
+
         document.select(&openingtime_selector).for_each(
-            |e| {
-                let fn_get_text = |element : scraper::ElementRef| {
+            |table| {
+                let concat_text = |element : scraper::ElementRef| {
                     let mut s = String::new();
                     for t in element.text() {
                         s += t.trim();
@@ -116,33 +133,36 @@ impl Pool {
                     s
                 };
 
-                let caption = fn_get_text(e.select(&caption_selector).next().unwrap());
-                println!("{}", caption);
+                let caption = concat_text(table.select(&caption_selector).next().unwrap());
+                let match_caption = regex_caption.captures(&caption).unwrap();
+               
+                println!("{}: {} - {}", 
+                    match_caption.get(1).unwrap().as_str(), // Pool name
+                    match_caption.get(2).unwrap().as_str(), // Starting date
+                    match_caption.get(3).unwrap().as_str()  // End date
+                );
                 
                 let mut weekday = String::new();
-                e.select(&tr_selector).for_each(
+                table.select(&tr_selector).for_each(
                     |tr| {
                         let mut children = tr.children();
-                        let mut cell = children.next().unwrap();
+                        let mut next_tr_child_elem = || {
+                            scraper::ElementRef::wrap(children.next().unwrap()).unwrap()
+                        };
+
+                        let mut cell  = next_tr_child_elem();
+                        if "th" == cell.value().name() {
+                            weekday = cell.inner_html().trim().to_string();
+                            cell = next_tr_child_elem();
+                        } 
+
+                        let hours = cell.inner_html();
+                        let reason = concat_text(next_tr_child_elem());
                         
-                        let first_cell = scraper::ElementRef::wrap(cell).unwrap();
-                        if "th" == first_cell.value().name() {
-                            weekday = first_cell.inner_html().trim().to_string();
-                            cell = children.next().unwrap();
-                        }
-
-                        let hours = scraper::ElementRef::wrap(cell).unwrap().inner_html();
-                        if !hours.contains("Geschlossen") {
-                            let m = regex.captures(&hours).unwrap();
-
-                            cell = children.next().unwrap();
-
-                            let mut reason = String::new();
-                            for text in scraper::ElementRef::wrap(cell).unwrap().text() {
-                                reason += text.trim();
+                        if let Some(match_times) = regex_times.captures(&hours) {
+                            if regex_open.is_match(&reason) {
+                                println!("\t{} -- {}-{} -- {}", weekday, match_times.get(1).unwrap().as_str(), match_times.get(2).unwrap().as_str(), reason);
                             }
-
-                            println!("\t{} -- {}-{} -- {}", weekday, m.get(1).unwrap().as_str(), m.get(2).unwrap().as_str(), reason);
                         }
                     }
                 );
