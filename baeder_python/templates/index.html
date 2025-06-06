@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Berlin Pools Opening Times</title>
+    <style>
+        body { font-family: sans-serif; margin: 20px; }
+        table { width: 50%; border-collapse: collapse; margin-bottom: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; }
+        th { background-color: #f2f2f2; }
+        /* Search box styling */
+        #search-container { margin-bottom: 20px; }
+        #pool-search {
+            font-size: 1.5em;      /* larger font size */
+            width: 400px;          /* wider input */
+            max-width: 90%;        /* responsive max width */
+            padding: 8px;          /* comfortable padding */
+            padding-right: 30px;   /* space for custom arrow */
+            /* custom dropdown arrow */
+            background: #fff url("data:image/svg+xml;charset=UTF-8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8'><polygon points='0,0 12,0 6,8' fill='%23000'/></svg>") no-repeat right 10px center;
+            appearance: none;
+        }
+        #search-form button {
+            font-size: 1.2em;
+            padding: 8px 12px;
+            margin-left: 8px;
+        }
+        .autocomplete-item { padding: 8px; cursor: pointer; }
+        .autocomplete-item:hover { background-color: #f0f0f0; }
+        /* Delete button next to pool */
+        .delete-btn {
+            font-size: 1em;
+            margin-left: 10px;
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: #888;
+        }
+        .delete-btn:hover {
+            color: #f00;
+        }
+    </style>
+</head>
+<body>
+    <h1>Berlin Pools Opening Times for the Next 7 Days</h1>
+    <div id="search-container">
+        <form id="search-form">
+            <div id="autocomplete-wrapper" style="position: relative; display: inline-block;">
+                <input type="text" id="pool-search" placeholder="Search for a pool..." autocomplete="off" />
+                <div id="autocomplete-list" style="position: absolute; top: 100%; left: 0;
+                     background: #fff; border: 1px solid #ddd; font-size: 1.5em;
+                     width: 100%; max-height: 300px; overflow-y: auto; z-index: 1000;
+                     display: none;"></div>
+            </div>
+            <button type="submit">Add</button>
+        </form>
+    </div>
+    <div id="pools-container">
+        <!-- Pool schedules will be inserted here -->
+    </div>
+    <script>
+        const poolList = {{ pool_list|tojson }};
+        const STORAGE_KEY = 'selectedPools';
+        function getSelectedPools() {
+            const s = localStorage.getItem(STORAGE_KEY);
+            try { return s ? JSON.parse(s) : []; } catch {
+                return [];
+            }
+        }
+        function saveSelectedPools(list) {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+        }
+        // On load, render persisted pools
+        document.addEventListener('DOMContentLoaded', () => {
+            getSelectedPools().forEach(url => {
+                fetch(`/api/pool_detail?url=${encodeURIComponent(url)}`)
+                    .then(resp => resp.json().then(data => ({ ok: resp.ok, data })))
+                    .then(({ ok, data }) => {
+                        if (ok) renderPool(data);
+                    });
+            });
+        });
+        const poolsContainer = document.getElementById('pools-container');
+        const searchForm = document.getElementById('search-form');
+        const poolSearch = document.getElementById('pool-search');
+        const wrapper = document.getElementById('autocomplete-wrapper');
+        const suggestionBox = document.getElementById('autocomplete-list');
+        // Autocomplete functions
+        function clearSuggestions() {
+            suggestionBox.innerHTML = '';
+            suggestionBox.style.display = 'none';
+        }
+        function showSuggestions() {
+            const val = poolSearch.value.trim().toLowerCase();
+            if (!val) { clearSuggestions(); return; }
+            const matches = poolList.filter(p => p.name.toLowerCase().includes(val)).slice(0, 10);
+            clearSuggestions();
+            matches.forEach(p => {
+                const item = document.createElement('div');
+                item.textContent = p.name;
+                item.className = 'autocomplete-item';
+                item.addEventListener('click', () => {
+                    poolSearch.value = p.name;
+                    clearSuggestions();
+                    poolSearch.focus();
+                });
+                suggestionBox.appendChild(item);
+            });
+            if (matches.length) suggestionBox.style.display = 'block';
+        }
+        // Event listeners for autocomplete
+        poolSearch.addEventListener('input', showSuggestions);
+        document.addEventListener('click', e => { if (!wrapper.contains(e.target)) clearSuggestions(); });
+        // Sort displayed pools alphabetically by name
+        function sortPools() {
+            const sections = Array.from(poolsContainer.querySelectorAll('section'));
+            sections.sort((a, b) => {
+                const nameA = a.querySelector('h2 a').textContent;
+                const nameB = b.querySelector('h2 a').textContent;
+                return nameA.localeCompare(nameB);
+            });
+            sections.forEach(sec => poolsContainer.appendChild(sec));
+        }
+        // Handle form submission
+        searchForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const name = poolSearch.value.trim();
+            const pool = poolList.find(p => p.name === name);
+            if (!pool) {
+                alert('Pool not found');
+                return;
+            }
+            // Fetch pool detail
+            try {
+                const resp = await fetch(`/api/pool_detail?url=${encodeURIComponent(pool.url)}`);
+                const data = await resp.json();
+                if (resp.ok) {
+                    renderPool(data);
+                } else {
+                    alert(data.error || 'Error fetching pool data');
+                }
+            } catch (err) {
+                alert('Network error');
+            }
+            poolSearch.value = '';
+        });
+        // Render pool schedule
+        function renderPool(data) {
+            // avoid duplicates
+            if (document.querySelector(`section[data-url="${data.url}"]`)) return;
+            const section = document.createElement('section');
+            section.setAttribute('data-url', data.url);
+            const h2 = document.createElement('h2');
+            const a = document.createElement('a');
+            a.href = data.url;
+            a.target = '_blank'; a.rel = 'noopener noreferrer';
+            a.textContent = data.name;
+            h2.appendChild(a);
+            // Add delete button
+            const delBtn = document.createElement('button');
+            delBtn.className = 'delete-btn';
+            delBtn.innerText = '\u00D7';
+            delBtn.title = 'Remove this pool';
+            delBtn.addEventListener('click', () => {
+                section.remove();
+                // Update persisted selection
+                const updated = getSelectedPools().filter(u => u !== data.url);
+                saveSelectedPools(updated);
+            });
+            h2.appendChild(delBtn);
+            section.appendChild(h2);
+            const table = document.createElement('table');
+            const thead = document.createElement('thead');
+            thead.innerHTML = '<tr><th>Date</th><th>Opening Times</th></tr>';
+            table.appendChild(thead);
+            const tbody = document.createElement('tbody');
+            for (const [date, time] of Object.entries(data.schedule)) {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td>${date}</td><td>${time}</td>`;
+                tbody.appendChild(tr);
+            }
+            table.appendChild(tbody);
+            section.appendChild(table);
+            poolsContainer.appendChild(section);
+            // Persist selection
+            const selected = getSelectedPools();
+            if (!selected.includes(data.url)) {
+                selected.push(data.url);
+                saveSelectedPools(selected);
+            }
+            // Re-sort after adding
+            sortPools();
+        }
+    </script>
+</body>
+</html>
