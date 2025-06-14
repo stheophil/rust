@@ -2,30 +2,63 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Berlin Pools Opening Times</title>
+    <title>Öffnungszeiten Berliner Bäder</title>
+    <!-- Google Font -->
+    <link href="https://fonts.googleapis.com/css?family=Roboto:400,500&display=swap" rel="stylesheet">
     <style>
+        /* Layout fixes for search form */
+        #search-form { display: flex; align-items: center; gap: 8px; }
+        #autocomplete-wrapper { position: relative; flex: 1; }
         body { font-family: sans-serif; margin: 20px; }
-        table { width: 50%; border-collapse: collapse; margin-bottom: 20px; }
+        body { font-family: 'Roboto', sans-serif; background: #f0f0f0; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+        /* Pool card styling */
+        section {
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin: 20px auto;
+            max-width: 600px;
+            padding: 16px;
+        }
+        section h2 {
+            margin: 0 0 12px;
+            font-size: 1.3em;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: #222;
+        }
         th, td { border: 1px solid #ddd; padding: 8px; }
-        th { background-color: #f2f2f2; }
+        th { background-color: #007BFF; color: #fff; }
+        tbody tr:hover { background-color: #f9f9f9; }
+        h1 { text-align: center; color: #333; }
         /* Search box styling */
-        #search-container { margin-bottom: 20px; }
+        #search-container { margin: 20px auto; max-width: 600px; }
         #pool-search {
-            font-size: 1.5em;      /* larger font size */
-            width: 400px;          /* wider input */
-            max-width: 90%;        /* responsive max width */
-            padding: 8px;          /* comfortable padding */
-            padding-right: 30px;   /* space for custom arrow */
-            /* custom dropdown arrow */
-            background: #fff url("data:image/svg+xml;charset=UTF-8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8'><polygon points='0,0 12,0 6,8' fill='%23000'/></svg>") no-repeat right 10px center;
+            font-size: 1.2em;
+            width: 80%;
+            padding: 10px 14px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            padding-right: 40px; /* space for custom arrow */
+            background: #fff url("data:image/svg+xml;charset=UTF-8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8'><polygon points='0,0 12,0 6,8' fill='%23666'/></svg>") no-repeat right 12px center;
             appearance: none;
         }
         #search-form button {
-            font-size: 1.2em;
-            padding: 8px 12px;
+            font-size: 1em;
+            padding: 10px 16px;
             margin-left: 8px;
+            background: #007BFF;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
         }
-        .autocomplete-item { padding: 8px; cursor: pointer; }
+        #search-form button:hover {
+            background: #0056b3;
+        }
+        .autocomplete-item { padding: 8px 12px; cursor: pointer; }
         .autocomplete-item:hover { background-color: #f0f0f0; }
         /* Delete button next to pool */
         .delete-btn {
@@ -42,17 +75,17 @@
     </style>
 </head>
 <body>
-    <h1>Berlin Pools Opening Times for the Next 7 Days</h1>
+    <h1>Öffnungszeiten Berliner Bäder für die nächsten 7 Tage</h1>
     <div id="search-container">
         <form id="search-form">
-            <div id="autocomplete-wrapper" style="position: relative; display: inline-block;">
-                <input type="text" id="pool-search" placeholder="Search for a pool..." autocomplete="off" />
+            <div id="autocomplete-wrapper">
+                <input type="text" id="pool-search" placeholder="Bad suchen..." autocomplete="off" />
                 <div id="autocomplete-list" style="position: absolute; top: 100%; left: 0;
                      background: #fff; border: 1px solid #ddd; font-size: 1.5em;
                      width: 100%; max-height: 300px; overflow-y: auto; z-index: 1000;
                      display: none;"></div>
             </div>
-            <button type="submit">Add</button>
+            <button type="submit">Hinzufügen</button>
         </form>
     </div>
     <div id="pools-container">
@@ -127,7 +160,7 @@
             const name = poolSearch.value.trim();
             const pool = poolList.find(p => p.name === name);
             if (!pool) {
-                alert('Pool not found');
+                alert('Bad nicht gefunden');
                 return;
             }
             // Fetch pool detail
@@ -137,10 +170,10 @@
                 if (resp.ok) {
                     renderPool(data);
                 } else {
-                    alert(data.error || 'Error fetching pool data');
+                    alert(data.error || 'Fehler beim Laden der Badezeiten');
                 }
             } catch (err) {
-                alert('Network error');
+                alert('Netzwerkfehler');
             }
             poolSearch.value = '';
         });
@@ -160,7 +193,7 @@
             const delBtn = document.createElement('button');
             delBtn.className = 'delete-btn';
             delBtn.innerText = '\u00D7';
-            delBtn.title = 'Remove this pool';
+            delBtn.title = 'Dieses Bad entfernen';
             delBtn.addEventListener('click', () => {
                 section.remove();
                 // Update persisted selection
@@ -171,7 +204,7 @@
             section.appendChild(h2);
             const table = document.createElement('table');
             const thead = document.createElement('thead');
-            thead.innerHTML = '<tr><th>Date</th><th>Opening Times</th></tr>';
+            thead.innerHTML = '<tr><th>Datum</th><th>Öffnungszeiten</th></tr>';
             table.appendChild(thead);
             const tbody = document.createElement('tbody');
             for (const [date, time] of Object.entries(data.schedule)) {
